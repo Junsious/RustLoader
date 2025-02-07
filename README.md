@@ -1,5 +1,6 @@
 # RustLoader
-![Rust loader](https://github.com/user-attachments/assets/e87ea1ea-151b-40d6-98ac-43daae3787c0)
+
+![image](https://github.com/user-attachments/assets/2b9ee9af-1f0b-432a-b60f-298a075f6341)
 
 
 RustLoader is a lightweight and fast loader, written in Rust. It is designed for easy and efficient management of your application's loading process.
