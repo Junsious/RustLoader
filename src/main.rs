@@ -1,5 +1,5 @@
 use async_process::Command;
-use inquire::{Select, Text};
+use inquire::{Select, Text, Confirm};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -12,52 +12,69 @@ const YT_DLP_DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/lat
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Check if yt-dlp is installed
-    if check_yt_dlp().is_err() {
-        println!("⚠ yt-dlp not found in the system.");
-        install_yt_dlp()?; // Install yt-dlp if it's not found
-    }
+    loop {
+        // Check if yt-dlp is installed
+        if check_yt_dlp().is_err() {
+            println!("⚠ yt-dlp not found in the system.");
+            install_yt_dlp()?; // Install yt-dlp if it's not found
+        }
 
-    // Prompt for the video URL
-    let url = Text::new("Enter the video URL:").prompt()?;
-    if !url.starts_with("https://www.youtube.com/watch") {
-        println!("❌ Error: Invalid YouTube URL.");
-        return Ok(());
-    }
+        // Prompt for the video URL
+        let url = Text::new("Enter the video URL:").prompt()?;
+        if !url.starts_with("https://www.youtube.com/watch") {
+            println!("❌ Error: Invalid YouTube URL.");
+            continue; // If URL is invalid, prompt again
+        }
 
-    // Prompt for the save path
-    let save_path = Text::new("Enter the save path:").prompt()?;
-    if !fs::metadata(&save_path).is_ok() {
-        println!("❌ Error: The specified folder does not exist.");
-        return Ok(());
-    }
+        // Prompt for the save path with validation
+        let save_path = loop {
+            let path = Text::new("Enter the save path:").prompt()?;
 
-    // Select video quality
-    let qualities = vec!["Best quality", "Medium quality", "Low quality"];
-    let quality = Select::new("Select video quality:", qualities).prompt()?;
+            // Check if the directory exists and is a valid directory
+            if Path::new(&path).is_dir() {
+                break path; // Exit loop if valid path
+            } else {
+                println!("❌ Error: The specified folder does not exist. Please enter a valid path.");
+            }
+        };
 
-    let format = match quality {
-        "Best quality" => "best",
-        "Medium quality" => "bv*[height<=720]+ba/b",
-        "Low quality" => "bv*[height<=480]+ba/b",
-        _ => "best",
-    };
+        // Select video quality
+        let qualities = vec!["Best quality", "Medium quality", "Low quality"];
+        let quality = Select::new("Select video quality:", qualities).prompt()?;
 
-    // Download the video
-    println!("⏳ Downloading video...");
-    let status = Command::new("yt-dlp")
-        .arg("-f")
-        .arg(format)
-        .arg("-o")
-        .arg(format!("{}/%(title)s.%(ext)s", save_path))
-        .arg(url)
-        .status()
-        .await?;
+        let format = match quality {
+            "Best quality" => "best",
+            "Medium quality" => "bv*[height<=720]+ba/b",
+            "Low quality" => "bv*[height<=480]+ba/b",
+            _ => "best",
+        };
 
-    if status.success() {
-        println!("✅ Video successfully downloaded!");
-    } else {
-        println!("❌ Error while downloading the video.");
+        // Download the video
+        println!("⏳ Downloading video...");
+        let status = Command::new("yt-dlp")
+            .arg("-f")
+            .arg(format)
+            .arg("-o")
+            .arg(format!("{}/%(title)s.%(ext)s", save_path))
+            .arg(url)
+            .status()
+            .await?;
+
+        if status.success() {
+            println!("✅ Video successfully downloaded!");
+        } else {
+            println!("❌ Error while downloading the video.");
+        }
+
+        // Prompt to keep the window open
+        let close = Confirm::new("Do you want to close the program? (y/n)").prompt()?;
+        if close {
+            println!("Goodbye!");
+            break; // Exit the loop and close the program
+        } else {
+            println!("You can enter a new URL or make other choices.");
+            // If user chooses to continue, we loop again
+        }
     }
 
     Ok(())
