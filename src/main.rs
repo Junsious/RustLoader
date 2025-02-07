@@ -6,45 +6,45 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command as SyncCommand;
 
-// Путь к yt-dlp.exe в папке с программой
+// Path to yt-dlp.exe in the program folder
 const YT_DLP_FILENAME: &str = "yt-dlp.exe";
 const YT_DLP_DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Проверяем, установлен ли yt-dlp
+    // Check if yt-dlp is installed
     if check_yt_dlp().is_err() {
-        println!("⚠ yt-dlp не найден в системе.");
-        install_yt_dlp()?;
+        println!("⚠ yt-dlp not found in the system.");
+        install_yt_dlp()?; // Install yt-dlp if it's not found
     }
 
-    // Запрашиваем ссылку на видео
-    let url = Text::new("Введите ссылку на видео:").prompt()?;
+    // Prompt for the video URL
+    let url = Text::new("Enter the video URL:").prompt()?;
     if !url.starts_with("https://www.youtube.com/watch") {
-        println!("❌ Ошибка: Некорректная ссылка на YouTube.");
+        println!("❌ Error: Invalid YouTube URL.");
         return Ok(());
     }
 
-    // Запрашиваем путь для сохранения
-    let save_path = Text::new("Введите путь для сохранения файла:").prompt()?;
+    // Prompt for the save path
+    let save_path = Text::new("Enter the save path:").prompt()?;
     if !fs::metadata(&save_path).is_ok() {
-        println!("❌ Ошибка: Указанная папка не существует.");
+        println!("❌ Error: The specified folder does not exist.");
         return Ok(());
     }
 
-    // Выбор качества видео
-    let qualities = vec!["Лучшее качество", "Среднее качество", "Низкое качество"];
-    let quality = Select::new("Выберите качество видео:", qualities).prompt()?;
+    // Select video quality
+    let qualities = vec!["Best quality", "Medium quality", "Low quality"];
+    let quality = Select::new("Select video quality:", qualities).prompt()?;
 
     let format = match quality {
-        "Лучшее качество" => "best",
-        "Среднее качество" => "bv*[height<=720]+ba/b",
-        "Низкое качество" => "bv*[height<=480]+ba/b",
+        "Best quality" => "best",
+        "Medium quality" => "bv*[height<=720]+ba/b",
+        "Low quality" => "bv*[height<=480]+ba/b",
         _ => "best",
     };
 
-    // Загружаем видео
-    println!("⏳ Загружаем видео...");
+    // Download the video
+    println!("⏳ Downloading video...");
     let status = Command::new("yt-dlp")
         .arg("-f")
         .arg(format)
@@ -55,15 +55,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     if status.success() {
-        println!("✅ Видео успешно загружено!");
+        println!("✅ Video successfully downloaded!");
     } else {
-        println!("❌ Ошибка при загрузке видео.");
+        println!("❌ Error while downloading the video.");
     }
 
     Ok(())
 }
 
-// Проверяет, установлен ли yt-dlp в системе
+// Checks if yt-dlp is installed
 fn check_yt_dlp() -> Result<(), ()> {
     if SyncCommand::new("yt-dlp").arg("--version").output().is_ok() {
         return Ok(());
@@ -71,7 +71,7 @@ fn check_yt_dlp() -> Result<(), ()> {
     Err(())
 }
 
-// Устанавливает yt-dlp, если его нет
+// Installs yt-dlp if it's not present
 fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
     let exe_path = env::current_dir()?.join(YT_DLP_FILENAME);
     let appdata_path = env::var("APPDATA").unwrap_or_else(|_| "C:\\yt-dlp".to_string());
@@ -79,21 +79,21 @@ fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
 
     if !target_path.exists() {
         if exe_path.exists() {
-            // Копируем yt-dlp.exe из текущей папки
-            println!("📂 Найден yt-dlp.exe, копируем в {}", target_path.display());
+            // Copy yt-dlp.exe from the current folder
+            println!("📂 Found yt-dlp.exe, copying to {}", target_path.display());
             fs::copy(&exe_path, &target_path)?;
         } else {
-            // Скачиваем yt-dlp.exe
-            println!("🌐 Скачиваем yt-dlp.exe...");
+            // Download yt-dlp.exe
+            println!("🌐 Downloading yt-dlp.exe...");
             let response = reqwest::blocking::get(YT_DLP_DOWNLOAD_URL)?;
             let mut file = fs::File::create(&target_path)?;
             io::copy(&mut response.bytes()?.as_ref(), &mut file)?;
         }
     }
 
-    // Добавляем путь в PATH (временно)
+    // Temporarily add the path to PATH
     env::set_var("PATH", format!("{};{}", target_path.parent().unwrap().display(), env::var("PATH").unwrap()));
 
-    println!("✅ yt-dlp успешно установлен!");
+    println!("✅ yt-dlp successfully installed!");
     Ok(())
 }
