@@ -5,75 +5,89 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command as SyncCommand;
+use regex::Regex;
 
-// Path to yt-dlp.exe in the program folder
+// Path to yt-dlp.exe
 const YT_DLP_FILENAME: &str = "yt-dlp.exe";
 const YT_DLP_DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 
+// Main async function
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
+        println!("\n Welcome to the YouTube Video Downloader \n");
+
         // Check if yt-dlp is installed
         if check_yt_dlp().is_err() {
-            println!("⚠ yt-dlp not found in the system.");
-            install_yt_dlp()?; // Install yt-dlp if it's not found
+            println!("⚠ yt-dlp is not found. Installing...");
+            install_yt_dlp()?;
         }
 
-        // Prompt for the video URL
-        let url = Text::new("Enter the video URL:").prompt()?;
-        if !url.starts_with("https://www.youtube.com/watch") {
-            println!("❌ Error: Invalid YouTube URL.");
-            continue; // If URL is invalid, prompt again
-        }
+        // Prompt for the YouTube URL with auto-cleaning
+        let url = loop {
+            let input = Text::new("🔗 Enter the YouTube video URL:")
+                .prompt()?
+                .trim()
+                .to_string();
 
-        // Prompt for the save path with validation
-        let save_path = loop {
-            let path = Text::new("Enter the save path:").prompt()?;
-
-            // Check if the directory exists and is a valid directory
-            if Path::new(&path).is_dir() {
-                break path; // Exit loop if valid path
+            if let Some(valid_url) = clean_youtube_url(&input) {
+                break valid_url;
             } else {
-                println!("❌ Error: The specified folder does not exist. Please enter a valid path.");
+                println!("❌ Error: Invalid URL. Please enter a valid YouTube link!");
             }
         };
 
-        // Select video quality
-        let qualities = vec!["Best quality", "Medium quality", "Low quality"];
-        let quality = Select::new("Select video quality:", qualities).prompt()?;
+        // Prompt for the save path
+        let save_path = loop {
+            let path = Text::new("📁 Enter the directory to save the video:")
+                .prompt()?
+                .trim()
+                .to_string();
+
+            if Path::new(&path).is_dir() {
+                break path;
+            } else {
+                println!("❌ Error: The specified folder does not exist. Please try again.");
+            }
+        };
+
+        // Video quality selection
+        let qualities = vec![" High", " Medium", " Low"];
+        let quality = Select::new("🎚 Select video quality:", qualities)
+            .prompt()?;
 
         let format = match quality {
-            "Best quality" => "best",
-            "Medium quality" => "bv*[height<=720]+ba/b",
-            "Low quality" => "bv*[height<=480]+ba/b",
+            " High" => "best",
+            " Medium" => "bv*[height<=720]+ba/b",
+            " Low" => "bv*[height<=480]+ba/b",
             _ => "best",
         };
 
-        // Download the video
+        // Start the download process
         println!("⏳ Downloading video...");
         let status = Command::new("yt-dlp")
             .arg("-f")
             .arg(format)
             .arg("-o")
             .arg(format!("{}/%(title)s.%(ext)s", save_path))
-            .arg(url)
+            .arg(&url)
             .status()
             .await?;
 
         if status.success() {
-            println!("✅ Video successfully downloaded!");
+            println!("✅ Video downloaded successfully!");
         } else {
-            println!("❌ Error while downloading the video.");
+            println!("❌ Error occurred during download.");
         }
 
-        // Prompt to keep the window open
-        let close = Confirm::new("Do you want to close the program? (y/n)").prompt()?;
-        if close {
-            println!("Goodbye!");
-            break; // Exit the loop and close the program
-        } else {
-            println!("You can enter a new URL or make other choices.");
-            // If user chooses to continue, we loop again
+        // Ask the user if they want to continue
+        let close = Confirm::new("🔄 Do you want to download another video?")
+            .with_default(true)
+            .prompt()?;
+
+        if !close {
+            println!("👋 Goodbye!");
+            break;
         }
     }
 
@@ -88,7 +102,7 @@ fn check_yt_dlp() -> Result<(), ()> {
     Err(())
 }
 
-// Installs yt-dlp if it's not present
+// Installs yt-dlp if not found
 fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
     let exe_path = env::current_dir()?.join(YT_DLP_FILENAME);
     let appdata_path = env::var("APPDATA").unwrap_or_else(|_| "C:\\yt-dlp".to_string());
@@ -96,11 +110,9 @@ fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
 
     if !target_path.exists() {
         if exe_path.exists() {
-            // Copy yt-dlp.exe from the current folder
             println!("📂 Found yt-dlp.exe, copying to {}", target_path.display());
             fs::copy(&exe_path, &target_path)?;
         } else {
-            // Download yt-dlp.exe
             println!("🌐 Downloading yt-dlp.exe...");
             let response = reqwest::blocking::get(YT_DLP_DOWNLOAD_URL)?;
             let mut file = fs::File::create(&target_path)?;
@@ -108,9 +120,13 @@ fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Temporarily add the path to PATH
     env::set_var("PATH", format!("{};{}", target_path.parent().unwrap().display(), env::var("PATH").unwrap()));
-
     println!("✅ yt-dlp successfully installed!");
     Ok(())
+}
+
+// Cleans and validates YouTube URLs
+fn clean_youtube_url(url: &str) -> Option<String> {
+    let re = Regex::new(r"^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[\w-]+|youtu\.be\/[\w-]+)").unwrap();
+    re.find(url).map(|m| m.as_str().to_string())
 }
