@@ -7,40 +7,15 @@ use std::path::Path;
 use std::process::Command as SyncCommand;
 use regex::Regex;
 use reqwest;
-use zip_extract;
 
 // URLs
 const YT_DLP_FILENAME: &str = "yt-dlp.exe";
 const YT_DLP_DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 const FFMPEG_DOWNLOAD_URL: &str = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip";
-const VLC_DOWNLOAD_URL: &str = "https://download.videolan.org/vlc/last/win64/vlc-3.0.18-win64.exe";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🎥 Welcome to the YouTube Video Downloader \n");
-
-    // Check and suggest installing VLC
-    fn check_vlc() -> Result<(), ()> {
-        // Try running VLC through PATH
-        if SyncCommand::new("vlc").arg("--version").output().is_ok() {
-            return Ok(());
-        }
-
-        // Check standard VLC paths (Windows)
-        let common_paths = [
-            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
-            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
-        ];
-
-        for path in &common_paths {
-            if Path::new(path).exists() {
-                println!("✅ VLC found at path: {}", path);
-                return Ok(());
-            }
-        }
-
-        Err(())
-    }
 
     // Check yt-dlp
     if check_yt_dlp().is_err() {
@@ -86,16 +61,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Choose quality and format
         let qualities = vec!["1080p", "2K", "4K", "<=720p", "<=480p"];
         let quality = Select::new("🎚 Choose quality:", qualities).prompt()?;
+
         let formats = vec!["mp4", "webm"];
         let video_format = Select::new("🎞 Choose format:", formats).prompt()?;
 
-        let format = match quality {
-            "1080p" => "bv*[height=1080]+ba/b",
-            "2K" => "bv*[height=1440]+ba/b",
-            "4K" => "bv*[height=2160]+ba/b",
-            "<=720p" => "bv*[height<=720]+ba/b",
-            "<=480p" => "bv*[height<=480]+ba/b",
-            _ => "bestvideo+bestaudio",
+        // Define the format
+        let format = match (quality, video_format.as_ref()) {
+            ("1080p", "mp4") => "bv*[height=1080]+ba/b", // Video with default audio
+            ("2K", "mp4") => "bv*[height=1440]+ba/b",    // Video with default audio
+            ("4K", "mp4") => "bv*[height=2160]+ba/b",    // Video with default audio
+            ("<=720p", "mp4") => "bv*[height<=720]+ba/b", // Video with default audio
+            ("<=480p", "mp4") => "bv*[height<=480]+ba/b", // Video with default audio
+            ("1080p", "webm") => "bv*[height=1080]+ba",   // WebM quality
+            ("2K", "webm") => "bv*[height=1440]+ba",      // WebM quality
+            ("4K", "webm") => "bv*[height=2160]+ba",      // WebM quality
+            ("<=720p", "webm") => "bv*[height<=720]+ba",   // WebM quality
+            ("<=480p", "webm") => "bv*[height<=480]+ba",   // WebM quality
+            _ => "bestvideo+bestaudio",                    // Default if no match
+        };
+
+        // Ensure MP4 uses non-Opus audio (usually AAC)
+        let format = if video_format == "mp4" {
+            format.replace("ba", "bestaudio[ext=m4a]") // Enforce m4a (AAC)
+        } else {
+            format.to_string() // WebM formats, no change needed
         };
 
         // Download video
@@ -179,47 +168,6 @@ fn install_ffmpeg() -> Result<(), Box<dyn std::error::Error>> {
     }
     env::set_var("PATH", format!("{};{}", ffmpeg_folder.join("bin").display(), env::var("PATH").unwrap()));
     println!("✅ FFmpeg installed!");
-    Ok(())
-}
-
-// Check VLC
-fn check_vlc() -> Result<(), ()> {
-    if SyncCommand::new("vlc").arg("--version").output().is_ok() {
-        return Ok(());
-    }
-    Err(())
-}
-
-// Install VLC
-fn install_vlc() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🌐 Downloading VLC...");
-    let response = reqwest::blocking::get(VLC_DOWNLOAD_URL)?;
-    let installer_path = "vlc_installer.exe";
-    let mut file = fs::File::create(installer_path)?;
-    io::copy(&mut response.bytes()?.as_ref(), &mut file)?;
-
-    println!("⚙️ Installing VLC...");
-    let status = SyncCommand::new(installer_path)
-        .arg("/S") // Silent install
-        .spawn()?
-        .wait()?;
-
-    if !status.success() {
-        println!("❌ VLC installation failed!");
-        return Err("VLC installation failed".into());
-    }
-
-    println!("✅ VLC installed! Adding to PATH...");
-
-    // Add VLC to PATH
-    let vlc_path = "C:\\Program Files\\VideoLAN\\VLC";
-    let path_var = env::var("PATH").unwrap_or_default();
-    if !path_var.contains(vlc_path) {
-        env::set_var("PATH", format!("{};{}", vlc_path, path_var));
-        println!("✅ VLC added to PATH!");
-    }
-
-    fs::remove_file(installer_path)?; // Remove installer
     Ok(())
 }
 
