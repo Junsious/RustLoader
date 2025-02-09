@@ -2,7 +2,7 @@ use async_process::Command;
 use inquire::{Select, Text, Confirm};
 use std::env;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::Path;
 use std::process::Command as SyncCommand;
 use regex::Regex;
@@ -11,19 +11,19 @@ use regex::Regex;
 const YT_DLP_FILENAME: &str = "yt-dlp.exe";
 const YT_DLP_DOWNLOAD_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 
-// Main async function
+// Main asynchronous function
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        println!("\n Welcome to the YouTube Video Downloader \n");
+        println!("\n🎥 Welcome to the YouTube Video Downloader \n");
 
         // Check if yt-dlp is installed
         if check_yt_dlp().is_err() {
-            println!("⚠ yt-dlp is not found. Installing...");
+            println!("⚠ yt-dlp not found. Installing...");
             install_yt_dlp()?;
         }
 
-        // Prompt for the YouTube URL with auto-cleaning
+        // Enter the URL with validation
         let url = loop {
             let input = Text::new("🔗 Enter the YouTube video URL:")
                 .prompt()?
@@ -33,13 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(valid_url) = clean_youtube_url(&input) {
                 break valid_url;
             } else {
-                println!("❌ Error: Invalid URL. Please enter a valid YouTube link!");
+                println!("❌ Error: Invalid URL. Please try again!");
             }
         };
 
-        // Prompt for the save path
+        // Enter the save path
         let save_path = loop {
-            let path = Text::new("📁 Enter the directory to save the video:")
+            let path = Text::new("📁 Enter the folder to save the video:")
                 .prompt()?
                 .trim()
                 .to_string();
@@ -51,36 +51,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         };
 
-        // Video quality selection
-        let qualities = vec![" High", " Medium", " Low"];
-        let quality = Select::new("🎚 Select video quality:", qualities)
-            .prompt()?;
+        // Select video quality
+        let qualities = vec!["1080p", "2K", "4K", "<=720p", "<=480p"];
+        let quality = Select::new("🎚 Choose video quality:", qualities).prompt()?;
 
+        // Select video format
+        let formats = vec!["mp4", "webm"];
+        let video_format = Select::new("🎞 Choose video format:", formats).prompt()?;
+
+        // Determine the correct format option for yt-dlp
         let format = match quality {
-            " High" => "best",
-            " Medium" => "bv*[height<=720]+ba/b",
-            " Low" => "bv*[height<=480]+ba/b",
-            _ => "best",
+            "1080p" => "bv*[height=1080]+ba/b",
+            "2K" => "bv*[height=1440]+ba/b",
+            "4K" => "bv*[height=2160]+ba/b",
+            "<=720p" => "bv*[height<=720]+ba/b",
+            "<=480p" => "bv*[height<=480]+ba/b",
+            _ => "bestvideo+bestaudio",
         };
 
-        // Start the download process
+        // Start downloading the video
         println!("⏳ Downloading video...");
-        let status = Command::new("yt-dlp")
+
+        let output_status = Command::new("yt-dlp")
             .arg("-f")
-            .arg(format)
+            .arg(format)  // Specify the selected video format
+            .arg("--merge-output-format")
+            .arg(video_format) // Enforce the chosen output format
             .arg("-o")
-            .arg(format!("{}/%(title)s.%(ext)s", save_path))
+            .arg(format!("{}/%(title)s.{}", save_path, video_format)) // Ensure correct file extension
             .arg(&url)
             .status()
             .await?;
 
-        if status.success() {
+        if output_status.success() {
             println!("✅ Video downloaded successfully!");
         } else {
             println!("❌ Error occurred during download.");
         }
 
-        // Ask the user if they want to continue
+        // Ask if the user wants to download another video
         let close = Confirm::new("🔄 Do you want to download another video?")
             .with_default(true)
             .prompt()?;
@@ -94,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// Checks if yt-dlp is installed
+// Check if yt-dlp is installed
 fn check_yt_dlp() -> Result<(), ()> {
     if SyncCommand::new("yt-dlp").arg("--version").output().is_ok() {
         return Ok(());
@@ -102,7 +111,7 @@ fn check_yt_dlp() -> Result<(), ()> {
     Err(())
 }
 
-// Installs yt-dlp if not found
+// Install yt-dlp
 fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
     let exe_path = env::current_dir()?.join(YT_DLP_FILENAME);
     let appdata_path = env::var("APPDATA").unwrap_or_else(|_| "C:\\yt-dlp".to_string());
@@ -121,11 +130,11 @@ fn install_yt_dlp() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     env::set_var("PATH", format!("{};{}", target_path.parent().unwrap().display(), env::var("PATH").unwrap()));
-    println!("✅ yt-dlp successfully installed!");
+    println!("✅ yt-dlp installed successfully!");
     Ok(())
 }
 
-// Cleans and validates YouTube URLs
+// Clean and validate YouTube URL
 fn clean_youtube_url(url: &str) -> Option<String> {
     let re = Regex::new(r"^(https?:\/\/)?(www\.)?(youtube\.com\/watch\?v=[\w-]+|youtu\.be\/[\w-]+)").unwrap();
     re.find(url).map(|m| m.as_str().to_string())
